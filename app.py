@@ -1,12 +1,14 @@
 """
 SISTEMA DE FICHA TÉCNICA - VERSÃO PREMIUM COMPLETA
 Interface Moderna e Profissional
+✨ ATUALIZADO: Suporte a Fichas Aninhadas
 """
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 from decimal import Decimal
 import sys
+import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -15,6 +17,18 @@ from database import SessionLocal, init_db
 from models import Cliente, Insumo, CustoOperacional, FichaTecnica, ItemFichaTecnica
 from exportacao_premium import gerar_excel_ficha, gerar_pdf_ficha
 from gerenciador_logos import salvar_logo_cliente, carregar_logo_cliente, deletar_logo_cliente
+
+# Importar módulos de fichas aninhadas
+try:
+    from calculos_custos import (
+        validar_dependencia_circular,
+        calcular_custo_ficha_recursivo,
+        recalcular_todas_fichas,
+        obter_hierarquia_ingredientes
+    )
+    FICHAS_ANINHADAS_DISPONIVEL = True
+except ImportError:
+    FICHAS_ANINHADAS_DISPONIVEL = False
 
 st.set_page_config(page_title="Ficha Técnica PRO", page_icon="📋", layout="wide")
 
@@ -43,12 +57,27 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 init_db()
+
+# Migração automática (executa só uma vez)
+if FICHAS_ANINHADAS_DISPONIVEL and not os.path.exists('.migrado'):
+    try:
+        from migrar_fichas_aninhadas import migrar_banco
+        with st.spinner("🔄 Atualizando banco de dados..."):
+            if migrar_banco():
+                with open('.migrado', 'w') as f:
+                    f.write('OK')
+                st.success("✅ Sistema atualizado!")
+    except Exception as e:
+        st.warning(f"⚠️ Migração pendente: {e}")
+
 if 'db' not in st.session_state:
     st.session_state.db = SessionLocal()
 db = st.session_state.db
 
 # SIDEBAR
 st.sidebar.markdown("# 📋 Ficha Técnica PRO")
+if FICHAS_ANINHADAS_DISPONIVEL:
+    st.sidebar.markdown("✨ *Fichas Aninhadas*")
 st.sidebar.markdown("---")
 menu = st.sidebar.radio("", ["🏠 Início", "👥 Clientes", "📦 Insumos", "💰 Custos", "📝 Fichas", "💵 Precificação"])
 st.sidebar.markdown("---")
@@ -60,6 +89,9 @@ st.sidebar.metric("📝 Fichas", db.query(FichaTecnica).filter(FichaTecnica.ativ
 if menu == "🏠 Início":
     st.markdown('<p class="main-title">📋 Sistema de Ficha Técnica</p>', unsafe_allow_html=True)
     st.markdown('<p class="subtitle">Gestão Profissional de Custos</p>', unsafe_allow_html=True)
+    
+    if FICHAS_ANINHADAS_DISPONIVEL:
+        st.info("✨ **NOVO:** Suporte a fichas técnicas aninhadas! Use preparações intermediárias como ingredientes.")
     
     col1, col2, col3 = st.columns(3)
     for col, icon, title, desc in [
@@ -98,37 +130,24 @@ elif menu == "👥 Clientes":
                             st.caption("📷 Sem logo")
                     with col2:
                         logo = st.file_uploader("Upload:", type=['png','jpg'], key=f"l{c.id}")
-                        if logo and st.button("💾", key=f"s{c.id}"):
+                        if logo:
                             path = salvar_logo_cliente(c.id, logo)
-                            if path:
-                                if c.logo_path: deletar_logo_cliente(c.logo_path)
-                                c.logo_path = path
-                                db.commit()
-                                st.success("✅ Salvo!")
-                                st.rerun()
-                        if c.logo_path and st.button("🗑️", key=f"d{c.id}"):
-                            deletar_logo_cliente(c.logo_path)
-                            c.logo_path = None
+                            c.logo_path = path
                             db.commit()
+                            st.success("✅")
                             st.rerun()
-                    st.markdown("---")
         else:
             st.info("📭 Nenhum cliente")
     
     with tab2:
         with st.form("fc", clear_on_submit=True):
-            nome = st.text_input("* Nome:", placeholder="Padaria Pão Quente")
+            nome = st.text_input("* Nome:", placeholder="Padaria do João")
             col1, col2 = st.columns(2)
-            telefone = col1.text_input("Telefone:")
-            email = col2.text_input("Email:")
-            logo = st.file_uploader("Logo:", type=['png','jpg'])
+            tel = col1.text_input("Telefone:", placeholder="(49) 99999-9999")
+            email = col2.text_input("Email:", placeholder="contato@email.com")
             if st.form_submit_button("💾 Salvar Cliente", type="primary", use_container_width=True):
                 if nome:
-                    c = Cliente(nome=nome, telefone=telefone, email=email)
-                    db.add(c)
-                    db.flush()
-                    if logo:
-                        c.logo_path = salvar_logo_cliente(c.id, logo)
+                    db.add(Cliente(nome=nome, telefone=tel, email=email))
                     db.commit()
                     st.success(f"✅ '{nome}' cadastrado!")
                     st.rerun()
@@ -142,7 +161,12 @@ elif menu == "📦 Insumos":
         insumos = db.query(Insumo).filter(Insumo.ativo == 1).all()
         if insumos:
             st.subheader(f"📊 {len(insumos)} insumos cadastrados")
-            df = pd.DataFrame([{'Nome': i.nome, 'Un.': i.unidade_medida, 'Preço': f"R$ {float(i.preco_unitario):.2f}"} for i in insumos])
+            df = pd.DataFrame([{
+                'Nome': i.nome,
+                'Unidade': i.unidade_medida,
+                'Preço': f"R$ {float(i.preco_unitario):.2f}",
+                'Fornecedor': i.fornecedor or '-'
+            } for i in insumos])
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             st.info("📭 Nenhum insumo")
@@ -192,7 +216,7 @@ elif menu == "💰 Custos":
                         st.success("✅ Salvo!")
                         st.rerun()
 
-# FICHAS
+# FICHAS (ATUALIZADO)
 elif menu == "📝 Fichas":
     st.markdown('<p class="main-title">📝 Fichas Técnicas</p>', unsafe_allow_html=True)
     
@@ -204,24 +228,53 @@ elif menu == "📝 Fichas":
         with tab1:
             fichas = db.query(FichaTecnica).filter(FichaTecnica.ativo == 1).all()
             if fichas:
+                if FICHAS_ANINHADAS_DISPONIVEL:
+                    if st.button("🔄 Recalcular Custos"):
+                        with st.spinner("Recalculando..."):
+                            stats = recalcular_todas_fichas(db)
+                            st.success(f"✅ {stats['processadas']} fichas!")
+                            st.rerun()
+                
                 for f in fichas:
-                    with st.expander(f"📝 {f.codigo} - {f.nome}"):
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("Custo", f"R$ {float(f.custo_insumos):,.2f}")
-                        col2.metric("Total", f"R$ {float(f.custo_total):,.2f}")
-                        col3.metric("Venda", f"R$ {float(f.preco_venda):,.2f}")
+                    badge = "🔗" if (FICHAS_ANINHADAS_DISPONIVEL and f.eh_intermediaria) else "📝"
+                    with st.expander(f"{badge} {f.codigo} - {f.nome}"):
+                        cols = st.columns(4) if FICHAS_ANINHADAS_DISPONIVEL else st.columns(3)
+                        cols[0].metric("Custo", f"R$ {float(f.custo_total):,.2f}")
+                        cols[1].metric("Venda", f"R$ {float(f.preco_venda):,.2f}")
+                        if FICHAS_ANINHADAS_DISPONIVEL:
+                            if f.rendimento_gramas:
+                                cols[2].metric("Rendimento", f"{float(f.rendimento_gramas):.0f}g")
                         
                         st.markdown("**Ingredientes:**")
-                        for i in f.itens:
-                            st.write(f"• {i.insumo.nome}: {float(i.quantidade)} {i.insumo.unidade_medida}")
+                        
+                        if FICHAS_ANINHADAS_DISPONIVEL:
+                            try:
+                                hierarquia = obter_hierarquia_ingredientes(db, f.id)
+                                for item in hierarquia:
+                                    nivel = item['nivel']
+                                    indent = "&nbsp;&nbsp;&nbsp;&nbsp;" * nivel
+                                    prefixo = "└─ " if nivel > 0 else "• "
+                                    
+                                    if item['eh_aninhado']:
+                                        st.markdown(f"{indent}{prefixo}**{item['nome']}** ({item['quantidade']:.1f}g) R$ {item['custo']:.2f}", unsafe_allow_html=True)
+                                    else:
+                                        st.markdown(f"{indent}{prefixo}{item['nome']} ({item['quantidade']:.1f}g) R$ {item['custo']:.2f}", unsafe_allow_html=True)
+                            except:
+                                for i in f.itens:
+                                    if i.insumo:
+                                        st.write(f"• {i.insumo.nome}: {float(i.quantidade)}g")
+                        else:
+                            for i in f.itens:
+                                if i.insumo:
+                                    st.write(f"• {i.insumo.nome}: {float(i.quantidade)}g")
                         
                         st.markdown("---")
                         col1, col2 = st.columns(2)
-                        if col1.button("📊 Excel", key=f"xe{f.id}", use_container_width=True):
+                        if col1.button("📊 Excel", key=f"xe{f.id}"):
                             excel = gerar_excel_ficha(f)
                             st.download_button("💾 Baixar", excel, f"ficha_{f.codigo}.xlsx", 
                                              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key=f"de{f.id}")
-                        if col2.button("📄 PDF", key=f"xp{f.id}", use_container_width=True):
+                        if col2.button("📄 PDF", key=f"xp{f.id}"):
                             pdf = gerar_pdf_ficha(f)
                             st.download_button("💾 Baixar", pdf, f"ficha_{f.codigo}.pdf", "application/pdf", key=f"dp{f.id}")
             else:
@@ -239,48 +292,90 @@ elif menu == "📝 Fichas":
             cod = col1.text_input("* Código:", placeholder="REC001")
             nom = col2.text_input("* Nome:", placeholder="Pão Francês")
             
+            if FICHAS_ANINHADAS_DISPONIVEL:
+                col1, col2 = st.columns(2)
+                rendimento_gramas = col1.number_input("Rendimento (g):", min_value=0.0, value=0.0, step=10.0)
+                eh_intermediaria = col2.checkbox("📋 Pode ser ingrediente")
+            
             st.markdown("---")
             st.subheader("🥖 Ingredientes")
             
-            col1, col2, col3 = st.columns([3, 2, 1])
-            insumos = db.query(Insumo).filter(Insumo.ativo == 1).all()
-            insn = col1.selectbox("Insumo:", [f"{i.nome} (R$ {float(i.preco_unitario):.2f})" for i in insumos])
-            qtd = col2.number_input("Qtd:", min_value=0.0, value=1.0, step=0.1)
-            if col3.button("➕", use_container_width=True):
-                iid = next(i.id for i in insumos if i.nome in insn)
-                ins = next(i for i in insumos if i.id == iid)
-                st.session_state.ing.append({
-                    'id': ins.id, 'nome': ins.nome, 'qtd': qtd,
-                    'un': ins.unidade_medida, 'preco': float(ins.preco_unitario),
-                    'custo': qtd * float(ins.preco_unitario)
-                })
-                st.rerun()
+            if FICHAS_ANINHADAS_DISPONIVEL:
+                tipo_ingrediente = st.radio("Tipo:", ["🥄 Insumo", "📋 Ficha"], horizontal=True)
+            else:
+                tipo_ingrediente = "🥄 Insumo"
+            
+            if tipo_ingrediente == "🥄 Insumo":
+                col1, col2, col3 = st.columns([3, 2, 1])
+                insumos = db.query(Insumo).filter(Insumo.ativo == 1).all()
+                if insumos:
+                    insn = col1.selectbox("Insumo:", [f"{i.nome} (R$ {float(i.preco_unitario):.2f})" for i in insumos])
+                    qtd = col2.number_input("Qtd (g):", min_value=0.0, value=100.0, step=10.0)
+                    if col3.button("➕"):
+                        iid = next(i.id for i in insumos if i.nome in insn)
+                        ins = next(i for i in insumos if i.id == iid)
+                        st.session_state.ing.append({
+                            'tipo': 'insumo', 'id': ins.id, 'nome': ins.nome,
+                            'qtd': qtd, 'preco': float(ins.preco_unitario),
+                            'custo': qtd * float(ins.preco_unitario)
+                        })
+                        st.rerun()
+            
+            else:  # Ficha
+                if FICHAS_ANINHADAS_DISPONIVEL:
+                    fichas_inter = db.query(FichaTecnica).filter(FichaTecnica.ativo == 1, FichaTecnica.eh_intermediaria == 1).all()
+                    if fichas_inter:
+                        col1, col2, col3 = st.columns([3, 2, 1])
+                        ficha_sel = col1.selectbox("Ficha:", options=fichas_inter, format_func=lambda x: f"{x.nome} ({float(x.rendimento_gramas):.0f}g)")
+                        qtd_ficha = col2.number_input("Qtd (g):", min_value=0.0, value=float(ficha_sel.rendimento_gramas or 100), step=10.0)
+                        if col3.button("➕"):
+                            rend_g = float(ficha_sel.rendimento_gramas or 1)
+                            custo_g = float(ficha_sel.custo_total) / rend_g if rend_g > 0 else 0
+                            st.session_state.ing.append({
+                                'tipo': 'ficha', 'id': ficha_sel.id, 'nome': f"📋 {ficha_sel.nome}",
+                                'qtd': qtd_ficha, 'preco': custo_g, 'custo': custo_g * qtd_ficha
+                            })
+                            st.rerun()
+                    else:
+                        st.warning("⚠️ Nenhuma ficha intermediária")
             
             if st.session_state.ing:
                 st.markdown("### ✅ Adicionados:")
                 total = 0
                 for idx, ing in enumerate(st.session_state.ing):
-                    col1, col2, col3, col4, col5 = st.columns([3,1,1,1,1])
+                    col1, col2, col3, col4 = st.columns([3,1,1,1])
                     col1.write(f"**{ing['nome']}**")
-                    col2.write(f"{ing['qtd']} {ing['un']}")
-                    col3.write(f"R$ {ing['preco']:.2f}")
-                    col4.write(f"R$ {ing['custo']:.2f}")
-                    if col5.button("🗑️", key=f"del{idx}"):
+                    col2.write(f"{ing['qtd']:.1f}g")
+                    col3.write(f"R$ {ing['custo']:.2f}")
+                    if col4.button("🗑️", key=f"del{idx}"):
                         st.session_state.ing.pop(idx)
                         st.rerun()
                     total += ing['custo']
                 
-                st.metric("**💰 CUSTO TOTAL**", f"R$ {total:,.2f}")
+                st.metric("**💰 TOTAL**", f"R$ {total:,.2f}")
                 
-                if st.button("💾 SALVAR FICHA TÉCNICA", type="primary", use_container_width=True):
+                if st.button("💾 SALVAR FICHA", type="primary", use_container_width=True):
                     if cod and nom:
-                        fic = FichaTecnica(cliente_id=cid, codigo=cod, nome=nom,
-                                          custo_insumos=Decimal(str(total)), custo_total=Decimal(str(total)))
+                        fic_data = {'cliente_id': cid, 'codigo': cod, 'nome': nom, 'custo_total': Decimal(str(total))}
+                        if FICHAS_ANINHADAS_DISPONIVEL:
+                            fic_data.update({'rendimento_gramas': Decimal(str(rendimento_gramas)), 'eh_intermediaria': 1 if eh_intermediaria else 0})
+                        
+                        fic = FichaTecnica(**fic_data)
                         db.add(fic)
                         db.flush()
+                        
                         for idx, ing in enumerate(st.session_state.ing):
-                            db.add(ItemFichaTecnica(ficha_tecnica_id=fic.id, insumo_id=ing['id'],
-                                                   quantidade=Decimal(str(ing['qtd'])), custo_item=Decimal(str(ing['custo'])), ordem=idx))
+                            item_data = {
+                                'ficha_tecnica_id': fic.id, 'tipo_item': ing.get('tipo', 'insumo'),
+                                'quantidade': Decimal(str(ing['qtd'])), 'custo_item': Decimal(str(ing['custo'])),
+                                'custo_unitario_historico': Decimal(str(ing['preco'])), 'ordem': idx
+                            }
+                            if ing.get('tipo') == 'ficha':
+                                item_data['ficha_ingrediente_id'] = ing['id']
+                            else:
+                                item_data['insumo_id'] = ing['id']
+                            db.add(ItemFichaTecnica(**item_data))
+                        
                         db.commit()
                         st.success(f"✅ '{nom}' criada!")
                         st.session_state.ing = []
@@ -300,20 +395,19 @@ elif menu == "💵 Precificação":
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("📊 Composição")
-            st.metric("Insumos", f"R$ {float(f.custo_insumos):,.2f}")
+            st.metric("Custo", f"R$ {float(f.custo_total):,.2f}")
             custos = db.query(CustoOperacional).filter(CustoOperacional.cliente_id == f.cliente_id, CustoOperacional.ativo == 1).all()
             top = sum(float(c.valor_mensal) for c in custos)
             st.metric("Operacionais/mês", f"R$ {top:,.2f}")
-            ct = float(f.custo_insumos) + (top / 30)
+            ct = float(f.custo_total) + (top / 30)
             st.metric("**TOTAL**", f"R$ {ct:,.2f}")
         
         with col2:
-            st.subheader("💰 Preço de Venda")
+            st.subheader("💰 Preço")
             mg = st.slider("Margem (%):", 0, 200, 30)
             pv = ct * (1 + mg/100)
-            st.metric("**PREÇO SUGERIDO**", f"R$ {pv:,.2f}")
-            if st.button("💾 Salvar Preço", type="primary", use_container_width=True):
-                f.custo_total = Decimal(str(ct))
+            st.metric("**SUGERIDO**", f"R$ {pv:,.2f}")
+            if st.button("💾 Salvar", type="primary", use_container_width=True):
                 f.margem_percentual = Decimal(str(mg))
                 f.preco_venda = Decimal(str(pv))
                 db.commit()
@@ -321,4 +415,5 @@ elif menu == "💵 Precificação":
                 st.rerun()
 
 st.markdown("---")
-st.markdown("<div style='text-align:center;color:#888;'><p>Sistema Ficha Técnica PRO v2.0</p></div>", unsafe_allow_html=True)
+versao = "v2.1 ✨" if FICHAS_ANINHADAS_DISPONIVEL else "v2.0"
+st.markdown(f"<div style='text-align:center;color:#888;'><p>Ficha Técnica PRO {versao}</p></div>", unsafe_allow_html=True)
