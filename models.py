@@ -1,6 +1,6 @@
 """
 Sistema de Ficha Técnica - Models SQLAlchemy
-Estrutura Simples e Eficiente
+Estrutura com Compatibilidade Retroativa
 """
 from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime, Text
 from sqlalchemy.orm import relationship
@@ -41,7 +41,7 @@ class Insumo(Base):
     ativo = Column(Integer, default=1)
     data_atualizacao = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     
-    itens_ficha = relationship("ItemFichaTecnica", back_populates="insumo")
+    itens_ficha = relationship("ItemFichaTecnica", back_populates="insumo", foreign_keys="ItemFichaTecnica.insumo_id")
 
 
 class CustoOperacional(Base):
@@ -68,7 +68,7 @@ class FichaTecnica(Base):
     nome = Column(String(200), nullable=False)
     categoria = Column(String(100))
     rendimento = Column(String(100))
-    rendimento_gramas = Column(Numeric(10, 2), default=0)  # NOVO: rendimento em gramas
+    rendimento_gramas = Column(Numeric(10, 2), default=0)
     tempo_preparo = Column(Integer)
     observacoes = Column(Text)
     
@@ -77,14 +77,14 @@ class FichaTecnica(Base):
     margem_percentual = Column(Numeric(5, 2), default=0)
     preco_venda = Column(Numeric(10, 2), default=0)
     
-    eh_intermediaria = Column(Integer, default=0)  # NOVO: pode ser usada como ingrediente
+    eh_intermediaria = Column(Integer, default=0)
     
     ativo = Column(Integer, default=1)
     data_criacao = Column(DateTime, default=datetime.now)
     data_atualizacao = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     
     cliente = relationship("Cliente", back_populates="fichas_tecnicas")
-    itens = relationship("ItemFichaTecnica", back_populates="ficha_tecnica", cascade="all, delete-orphan")
+    itens = relationship("ItemFichaTecnica", back_populates="ficha_tecnica", foreign_keys="ItemFichaTecnica.ficha_tecnica_id", cascade="all, delete-orphan")
 
 
 class ItemFichaTecnica(Base):
@@ -94,20 +94,22 @@ class ItemFichaTecnica(Base):
     id = Column(Integer, primary_key=True)
     ficha_tecnica_id = Column(Integer, ForeignKey('fichas_tecnicas.id'), nullable=False)
     
-    # NOVO: tipo do item ('insumo' ou 'ficha')
+    # Tipo do item ('insumo' ou 'ficha')
     tipo_item = Column(String(20), default='insumo', nullable=False)
     
-    # Insumo simples (obrigatório se tipo='insumo')
+    # Insumo simples
     insumo_id = Column(Integer, ForeignKey('insumos.id'), nullable=True)
     
-    # NOVO: Ficha técnica como ingrediente (obrigatório se tipo='ficha')
+    # Ficha técnica como ingrediente
     ficha_ingrediente_id = Column(Integer, ForeignKey('fichas_tecnicas.id'), nullable=True)
     
-    quantidade = Column(Numeric(10, 3), nullable=False)  # sempre em gramas
+    quantidade = Column(Numeric(10, 3), nullable=False)
     custo_item = Column(Numeric(10, 2), default=0)
-    custo_unitario_historico = Column(Numeric(10, 6), default=0)  # NOVO: custo/grama no momento do cadastro
+    custo_unitario_historico = Column(Numeric(10, 6), default=0)
     ordem = Column(Integer, default=0)
     
+    # Relacionamentos com foreign_keys explícitos para evitar ambiguidade
     ficha_tecnica = relationship("FichaTecnica", foreign_keys=[ficha_tecnica_id], back_populates="itens")
-    insumo = relationship("Insumo", back_populates="itens_ficha", foreign_keys=[insumo_id])
-    ficha_ingrediente = relationship("FichaTecnica", foreign_keys=[ficha_ingrediente_id])
+    insumo = relationship("Insumo", foreign_keys=[insumo_id], back_populates="itens_ficha")
+    # Relacionamento simples sem back_populates para evitar conflito
+    ficha_ingrediente = relationship("FichaTecnica", foreign_keys=[ficha_ingrediente_id], lazy='joined')
