@@ -131,16 +131,32 @@ def gerar_excel_ficha(ficha, output_stream=None):
         for col in ['B', 'C', 'D', 'E']:
             ws[f'{col}{linha}'].fill = PatternFill(start_color=cor_linha, end_color=cor_linha, fill_type="solid")
         
-        ws[f'B{linha}'] = item.insumo.nome
-        ws[f'C{linha}'] = f"{float(item.quantidade)} {item.insumo.unidade_medida}"
-        ws[f'C{linha}'].alignment = Alignment(horizontal='center')
-        ws[f'D{linha}'] = float(item.insumo.preco_unitario)
-        ws[f'D{linha}'].number_format = 'R$ #,##0.00'
-        ws[f'D{linha}'].alignment = Alignment(horizontal='right')
-        ws[f'E{linha}'] = float(item.custo_item)
-        ws[f'E{linha}'].number_format = 'R$ #,##0.00'
-        ws[f'E{linha}'].alignment = Alignment(horizontal='right')
-        ws[f'E{linha}'].font = Font(bold=True)
+        # Suporte a fichas aninhadas
+        if item.tipo_item == 'ficha' and item.ficha_ingrediente:
+            # Item é uma ficha técnica
+            ws[f'B{linha}'] = f"📋 {item.ficha_ingrediente.nome}"
+            ws[f'C{linha}'] = f"{float(item.quantidade)} g"
+            ws[f'C{linha}'].alignment = Alignment(horizontal='center')
+            custo_por_grama = float(item.custo_unitario_historico) if item.custo_unitario_historico else 0
+            ws[f'D{linha}'] = custo_por_grama
+            ws[f'D{linha}'].number_format = 'R$ #,##0.0000'
+            ws[f'D{linha}'].alignment = Alignment(horizontal='right')
+            ws[f'E{linha}'] = float(item.custo_item)
+            ws[f'E{linha}'].number_format = 'R$ #,##0.00'
+            ws[f'E{linha}'].alignment = Alignment(horizontal='right')
+            ws[f'E{linha}'].font = Font(bold=True)
+        elif item.insumo:
+            # Item é um insumo normal
+            ws[f'B{linha}'] = item.insumo.nome
+            ws[f'C{linha}'] = f"{float(item.quantidade)} {item.insumo.unidade_medida}"
+            ws[f'C{linha}'].alignment = Alignment(horizontal='center')
+            ws[f'D{linha}'] = float(item.insumo.preco_unitario)
+            ws[f'D{linha}'].number_format = 'R$ #,##0.00'
+            ws[f'D{linha}'].alignment = Alignment(horizontal='right')
+            ws[f'E{linha}'] = float(item.custo_item)
+            ws[f'E{linha}'].number_format = 'R$ #,##0.00'
+            ws[f'E{linha}'].alignment = Alignment(horizontal='right')
+            ws[f'E{linha}'].font = Font(bold=True)
     
     # TOTAL
     linha += 2
@@ -249,10 +265,24 @@ def gerar_pdf_ficha(ficha, output_stream=None):
                  Paragraph("<b>PREÇO</b>", styles['Normal']), Paragraph("<b>SUBTOTAL</b>", styles['Normal'])]]
     
     for item in ficha.itens:
+        # Suporte a fichas aninhadas
+        if item.tipo_item == 'ficha' and item.ficha_ingrediente:
+            # Item é uma ficha técnica
+            nome_display = f"📋 {item.ficha_ingrediente.nome}"
+            qtd_display = f"{float(item.quantidade)} g"
+            preco_display = f"R$ {float(item.custo_unitario_historico):,.4f}/g" if item.custo_unitario_historico else "R$ 0,00"
+        elif item.insumo:
+            # Item é um insumo normal
+            nome_display = item.insumo.nome
+            qtd_display = f"{float(item.quantidade)} {item.insumo.unidade_medida}"
+            preco_display = f"R$ {float(item.insumo.preco_unitario):,.2f}"
+        else:
+            continue
+        
         ing_data.append([
-            item.insumo.nome,
-            f"{float(item.quantidade)} {item.insumo.unidade_medida}",
-            f"R$ {float(item.insumo.preco_unitario):,.2f}",
+            nome_display,
+            qtd_display,
+            preco_display,
             Paragraph(f"<b>R$ {float(item.custo_item):,.2f}</b>", styles['Normal'])
         ])
     
