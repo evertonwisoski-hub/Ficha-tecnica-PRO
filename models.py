@@ -108,6 +108,6 @@ class ItemFichaTecnica(Base):
     custo_unitario_historico = Column(Numeric(10, 6), default=0)  # NOVO: custo/grama no momento do cadastro
     ordem = Column(Integer, default=0)
     
-    ficha_tecnica = relationship("FichaTecnica", back_populates="itens")
+    ficha_tecnica = relationship("FichaTecnica", foreign_keys=[ficha_tecnica_id], back_populates="itens")
     insumo = relationship("Insumo", back_populates="itens_ficha", foreign_keys=[insumo_id])
-    ficha_ingrediente = relationship("FichaTecnica", foreign_keys=[ficha_ingrediente_id], remote_side="FichaTecnica.id")
+    ficha_ingrediente = relationship("FichaTecnica", foreign_keys=[ficha_ingrediente_id])
