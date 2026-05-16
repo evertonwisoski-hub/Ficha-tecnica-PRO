@@ -68,6 +68,7 @@ class FichaTecnica(Base):
     nome = Column(String(200), nullable=False)
     categoria = Column(String(100))
     rendimento = Column(String(100))
+    rendimento_gramas = Column(Numeric(10, 2), default=0)  # NOVO: rendimento em gramas
     tempo_preparo = Column(Integer)
     observacoes = Column(Text)
     
@@ -75,6 +76,8 @@ class FichaTecnica(Base):
     custo_total = Column(Numeric(10, 2), default=0)
     margem_percentual = Column(Numeric(5, 2), default=0)
     preco_venda = Column(Numeric(10, 2), default=0)
+    
+    eh_intermediaria = Column(Integer, default=0)  # NOVO: pode ser usada como ingrediente
     
     ativo = Column(Integer, default=1)
     data_criacao = Column(DateTime, default=datetime.now)
@@ -90,10 +93,21 @@ class ItemFichaTecnica(Base):
     
     id = Column(Integer, primary_key=True)
     ficha_tecnica_id = Column(Integer, ForeignKey('fichas_tecnicas.id'), nullable=False)
-    insumo_id = Column(Integer, ForeignKey('insumos.id'), nullable=False)
-    quantidade = Column(Numeric(10, 3), nullable=False)
+    
+    # NOVO: tipo do item ('insumo' ou 'ficha')
+    tipo_item = Column(String(20), default='insumo', nullable=False)
+    
+    # Insumo simples (obrigatório se tipo='insumo')
+    insumo_id = Column(Integer, ForeignKey('insumos.id'), nullable=True)
+    
+    # NOVO: Ficha técnica como ingrediente (obrigatório se tipo='ficha')
+    ficha_ingrediente_id = Column(Integer, ForeignKey('fichas_tecnicas.id'), nullable=True)
+    
+    quantidade = Column(Numeric(10, 3), nullable=False)  # sempre em gramas
     custo_item = Column(Numeric(10, 2), default=0)
+    custo_unitario_historico = Column(Numeric(10, 6), default=0)  # NOVO: custo/grama no momento do cadastro
     ordem = Column(Integer, default=0)
     
     ficha_tecnica = relationship("FichaTecnica", back_populates="itens")
-    insumo = relationship("Insumo", back_populates="itens_ficha")
+    insumo = relationship("Insumo", back_populates="itens_ficha", foreign_keys=[insumo_id])
+    ficha_ingrediente = relationship("FichaTecnica", foreign_keys=[ficha_ingrediente_id], remote_side="FichaTecnica.id")
