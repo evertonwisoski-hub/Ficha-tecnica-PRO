@@ -342,19 +342,6 @@ elif menu == "Fichas":
                                 novo_cod = col1.text_input("Codigo:", value=f.codigo)
                                 novo_nome = col2.text_input("Nome:", value=f.nome)
                                 
-                                if FICHAS_ANINHADAS_DISPONIVEL:
-                                    st.markdown("**Rendimento e Quebra:**")
-                                    col1, col2, col3 = st.columns(3)
-                                    # Calcular rendimento bruto dos ingredientes atuais + novos
-                                    rend_bruto_atual = sum(float(item.quantidade) for item in f.itens if item.id in [i[0] for i in itens_para_manter])
-                                    rend_bruto_novos = sum(ing['qtd'] for ing in st.session_state.get(f'novos_ing_{f.id}', []))
-                                    rend_bruto_total = rend_bruto_atual + rend_bruto_novos
-                                    col1.metric("BRUTO (auto)", f"{rend_bruto_total:.1f}g")
-                                    novo_quebra = col2.number_input("% Quebra:", min_value=0.0, max_value=100.0, value=float(f.percentual_quebra or 0), step=0.5)
-                                    rend_liquido_calc = rend_bruto_total * (1 - novo_quebra/100) if novo_quebra > 0 else rend_bruto_total
-                                    col3.metric("LIQUIDO", f"{rend_liquido_calc:.1f}g")
-                                    novo_inter = st.checkbox("Pode ser ingrediente", value=bool(f.eh_intermediaria))
-                                
                                 st.markdown("**Ingredientes Atuais:**")
                                 itens_para_manter = []
                                 for item in f.itens:
@@ -372,6 +359,19 @@ elif menu == "Fichas":
                                     
                                     if manter:
                                         itens_para_manter.append((item.id, nova_qtd))
+                                
+                                if FICHAS_ANINHADAS_DISPONIVEL:
+                                    st.markdown("**Rendimento e Quebra:**")
+                                    col1, col2, col3 = st.columns(3)
+                                    # Calcular rendimento bruto dos ingredientes mantidos + novos
+                                    rend_bruto_atual = sum(qtd for _, qtd in itens_para_manter)
+                                    rend_bruto_novos = sum(ing['qtd'] for ing in st.session_state.get(f'novos_ing_{f.id}', []))
+                                    rend_bruto_total = rend_bruto_atual + rend_bruto_novos
+                                    col1.metric("BRUTO (auto)", f"{rend_bruto_total:.1f}g")
+                                    novo_quebra = col2.number_input("% Quebra:", min_value=0.0, max_value=100.0, value=float(f.percentual_quebra or 0), step=0.5)
+                                    rend_liquido_calc = rend_bruto_total * (1 - novo_quebra/100) if novo_quebra > 0 else rend_bruto_total
+                                    col3.metric("LIQUIDO", f"{rend_liquido_calc:.1f}g")
+                                    novo_inter = st.checkbox("Pode ser ingrediente", value=bool(f.eh_intermediaria))
                                 
                                 st.markdown("**Adicionar Novos Ingredientes:**")
                                 if f'novos_ing_{f.id}' not in st.session_state:
