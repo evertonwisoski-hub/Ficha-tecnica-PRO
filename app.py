@@ -52,7 +52,7 @@ if 'db' not in st.session_state:
     st.session_state.db = SessionLocal()
 db = st.session_state.db
 
-st.sidebar.markdown("# Ficha Tecnica PRO v2.3")
+st.sidebar.markdown("# Ficha Tecnica PRO v2.4")
 st.sidebar.markdown("---")
 menu = st.sidebar.radio("", ["Inicio", "Clientes", "Insumos", "Custos", "Fichas", "Precificacao"])
 st.sidebar.markdown("---")
@@ -278,14 +278,17 @@ elif menu == "Fichas":
                                 if i.insumo:
                                     st.write(f"• {i.insumo.nome}: {float(i.quantidade)}g")
                         st.markdown("---")
-                        col1, col2, col3 = st.columns(3)
+                        col1, col2, col3, col4 = st.columns(4)
                         if col1.button("Excel", key=f"xe{f.id}"):
                             excel = gerar_excel_ficha(f)
                             st.download_button("Baixar", excel, f"ficha_{f.codigo}.xlsx", key=f"de{f.id}")
                         if col2.button("PDF", key=f"xp{f.id}"):
                             pdf = gerar_pdf_ficha(f)
                             st.download_button("Baixar", pdf, f"ficha_{f.codigo}.pdf", key=f"dp{f.id}")
-                        with col3:
+                        if col3.button("Editar", key=f"ef{f.id}"):
+                            st.session_state[f'editando_ficha_{f.id}'] = True
+                            st.rerun()
+                        with col4:
                             if FICHAS_ANINHADAS_DISPONIVEL:
                                 usada = db.query(ItemFichaTecnica).filter(ItemFichaTecnica.ficha_ingrediente_id==f.id).count()
                                 if usada > 0:
@@ -308,6 +311,159 @@ elif menu == "Fichas":
                                     f.ativo = 0
                                     db.commit()
                                     st.rerun()
+                        
+                        # FORMULARIO DE EDICAO DE FICHA
+                        if st.session_state.get(f'editando_ficha_{f.id}'):
+                            st.markdown("---")
+                            st.markdown("### Editar Ficha")
+                            
+                            with st.form(f"fedit_{f.id}"):
+                                col1, col2 = st.columns(2)
+                                novo_cod = col1.text_input("Codigo:", value=f.codigo)
+                                novo_nome = col2.text_input("Nome:", value=f.nome)
+                                
+                                if FICHAS_ANINHADAS_DISPONIVEL:
+                                    col1, col2 = st.columns(2)
+                                    novo_rend = col1.number_input("Rendimento (g):", min_value=0.0, value=float(f.rendimento_gramas or 0), step=10.0)
+                                    novo_inter = col2.checkbox("Pode ser ingrediente", value=bool(f.eh_intermediaria))
+                                
+                                st.markdown("**Ingredientes Atuais:**")
+                                itens_para_manter = []
+                                for item in f.itens:
+                                    col1, col2, col3 = st.columns([3,2,1])
+                                    if item.tipo_item == 'ficha' and item.ficha_ingrediente:
+                                        nome_display = f"[Ficha] {item.ficha_ingrediente.nome}"
+                                    elif item.insumo:
+                                        nome_display = item.insumo.nome
+                                    else:
+                                        continue
+                                    
+                                    col1.write(nome_display)
+                                    nova_qtd = col2.number_input("Qtd (g):", min_value=0.0, value=float(item.quantidade), step=10.0, key=f"qtd_edit_{item.id}")
+                                    manter = col3.checkbox("Manter", value=True, key=f"keep_{item.id}")
+                                    
+                                    if manter:
+                                        itens_para_manter.append((item.id, nova_qtd))
+                                
+                                st.markdown("**Adicionar Novos Ingredientes:**")
+                                if f'novos_ing_{f.id}' not in st.session_state:
+                                    st.session_state[f'novos_ing_{f.id}'] = []
+                                
+                                col1, col2 = st.columns(2)
+                                if col1.form_submit_button("Salvar Alteracoes"):
+                                    # Atualizar dados basicos da ficha
+                                    f.codigo = novo_cod
+                                    f.nome = novo_nome
+                                    if FICHAS_ANINHADAS_DISPONIVEL:
+                                        f.rendimento_gramas = Decimal(str(novo_rend))
+                                        f.eh_intermediaria = 1 if novo_inter else 0
+                                    
+                                    # Deletar itens nao mantidos
+                                    ids_manter = [item_id for item_id, _ in itens_para_manter]
+                                    for item in f.itens:
+                                        if item.id not in ids_manter:
+                                            db.delete(item)
+                                    
+                                    # Atualizar quantidades dos mantidos
+                                    for item_id, nova_qtd in itens_para_manter:
+                                        item = db.query(ItemFichaTecnica).get(item_id)
+                                        if item:
+                                            item.quantidade = Decimal(str(nova_qtd))
+                                            # Recalcular custo do item
+                                            if item.tipo_item == 'insumo' and item.insumo:
+                                                item.custo_item = Decimal(str(nova_qtd)) * item.insumo.preco_unitario
+                                            elif item.tipo_item == 'ficha' and item.ficha_ingrediente:
+                                                rend = float(item.ficha_ingrediente.rendimento_gramas or 1)
+                                                custo_g = float(item.ficha_ingrediente.custo_total) / rend if rend > 0 else 0
+                                                item.custo_item = Decimal(str(nova_qtd * custo_g))
+                                    
+                                    # Adicionar novos ingredientes
+                                    for novo_ing in st.session_state.get(f'novos_ing_{f.id}', []):
+                                        item_data = {
+                                            'ficha_tecnica_id': f.id,
+                                            'tipo_item': novo_ing['tipo'],
+                                            'quantidade': Decimal(str(novo_ing['qtd'])),
+                                            'custo_item': Decimal(str(novo_ing['custo'])),
+                                            'custo_unitario_historico': Decimal(str(novo_ing['preco']))
+                                        }
+                                        if novo_ing['tipo'] == 'ficha':
+                                            item_data['ficha_ingrediente_id'] = novo_ing['id']
+                                        else:
+                                            item_data['insumo_id'] = novo_ing['id']
+                                        db.add(ItemFichaTecnica(**item_data))
+                                    
+                                    db.commit()
+                                    
+                                    # Recalcular custo total
+                                    if FICHAS_ANINHADAS_DISPONIVEL:
+                                        recalcular_todas_fichas(db)
+                                    
+                                    # Limpar estados
+                                    del st.session_state[f'editando_ficha_{f.id}']
+                                    if f'novos_ing_{f.id}' in st.session_state:
+                                        del st.session_state[f'novos_ing_{f.id}']
+                                    
+                                    st.success("Ficha atualizada!")
+                                    st.rerun()
+                                
+                                if col2.form_submit_button("Cancelar"):
+                                    del st.session_state[f'editando_ficha_{f.id}']
+                                    if f'novos_ing_{f.id}' in st.session_state:
+                                        del st.session_state[f'novos_ing_{f.id}']
+                                    st.rerun()
+                            
+                            # Formulario para adicionar novos ingredientes (fora do form principal)
+                            st.markdown("#### Adicionar Ingrediente")
+                            tipo_add = st.radio("Tipo:", ["Insumo", "Ficha"], horizontal=True, key=f"tipo_add_{f.id}") if FICHAS_ANINHADAS_DISPONIVEL else "Insumo"
+                            
+                            if tipo_add == "Insumo":
+                                col1, col2, col3 = st.columns([3,2,1])
+                                insumos = db.query(Insumo).filter(Insumo.ativo == 1).all()
+                                if insumos:
+                                    ins_sel = col1.selectbox("Insumo:", insumos, format_func=lambda x: x.nome, key=f"ins_sel_{f.id}")
+                                    qtd_add = col2.number_input("Qtd (g):", min_value=0.0, value=100.0, step=10.0, key=f"qtd_add_{f.id}")
+                                    if col3.button("ADD", key=f"btn_add_{f.id}"):
+                                        if f'novos_ing_{f.id}' not in st.session_state:
+                                            st.session_state[f'novos_ing_{f.id}'] = []
+                                        st.session_state[f'novos_ing_{f.id}'].append({
+                                            'tipo': 'insumo',
+                                            'id': ins_sel.id,
+                                            'nome': ins_sel.nome,
+                                            'qtd': qtd_add,
+                                            'preco': float(ins_sel.preco_unitario),
+                                            'custo': qtd_add * float(ins_sel.preco_unitario)
+                                        })
+                                        st.rerun()
+                            else:
+                                fichas_inter = db.query(FichaTecnica).filter(FichaTecnica.ativo==1, FichaTecnica.eh_intermediaria==1, FichaTecnica.id!=f.id).all()
+                                if fichas_inter:
+                                    col1, col2, col3 = st.columns([3,2,1])
+                                    fic_sel = col1.selectbox("Ficha:", fichas_inter, format_func=lambda x: x.nome, key=f"fic_sel_{f.id}")
+                                    qtd_add = col2.number_input("Qtd (g):", min_value=0.0, value=100.0, step=10.0, key=f"qtdf_add_{f.id}")
+                                    if col3.button("ADD", key=f"btn_addf_{f.id}"):
+                                        rg = float(fic_sel.rendimento_gramas or 1)
+                                        cg = float(fic_sel.custo_total) / rg if rg > 0 else 0
+                                        if f'novos_ing_{f.id}' not in st.session_state:
+                                            st.session_state[f'novos_ing_{f.id}'] = []
+                                        st.session_state[f'novos_ing_{f.id}'].append({
+                                            'tipo': 'ficha',
+                                            'id': fic_sel.id,
+                                            'nome': fic_sel.nome,
+                                            'qtd': qtd_add,
+                                            'preco': cg,
+                                            'custo': cg * qtd_add
+                                        })
+                                        st.rerun()
+                            
+                            # Mostrar novos ingredientes adicionados
+                            if st.session_state.get(f'novos_ing_{f.id}'):
+                                st.markdown("**Novos a adicionar:**")
+                                for idx, ing in enumerate(st.session_state[f'novos_ing_{f.id}']):
+                                    col1, col2 = st.columns([3,1])
+                                    col1.write(f"{ing['nome']} - {ing['qtd']:.1f}g - R$ {ing['custo']:.2f}")
+                                    if col2.button("X", key=f"rem_new_{f.id}_{idx}"):
+                                        st.session_state[f'novos_ing_{f.id}'].pop(idx)
+                                        st.rerun()
             else:
                 st.info("Nenhuma ficha")
         with tab2:
@@ -401,4 +557,4 @@ elif menu == "Precificacao":
                 st.rerun()
 
 st.markdown("---")
-st.markdown("<div style='text-align:center;color:#888;'>Ficha Tecnica PRO v2.3</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align:center;color:#888;'>Ficha Tecnica PRO v2.4 - Edicao Completa</div>", unsafe_allow_html=True)
