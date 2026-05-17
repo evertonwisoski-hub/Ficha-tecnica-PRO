@@ -1,4 +1,27 @@
-"""
+# LIMPEZA AUTOMATICA - EXECUTE UMA VEZ
+import os
+if not os.path.exists('.limpo'):
+    from database import SessionLocal
+    from models import Cliente, FichaTecnica, ItemFichaTecnica
+    db = SessionLocal()
+    # Deletar cliente aaaaa
+    c = db.query(Cliente).filter(Cliente.nome.like('%aaaa%')).first()
+    if c:
+        for f in db.query(FichaTecnica).filter(FichaTecnica.cliente_id==c.id).all():
+            for i in db.query(ItemFichaTecnica).filter(ItemFichaTecnica.ficha_tecnica_id==f.id).all():
+                db.delete(i)
+            db.delete(f)
+        db.delete(c)
+    # Deletar ficha VVV
+    f = db.query(FichaTecnica).filter(FichaTecnica.codigo.like('%VVV%')).first()
+    if f:
+        for i in db.query(ItemFichaTecnica).filter(ItemFichaTecnica.ficha_tecnica_id==f.id).all():
+            db.delete(i)
+        db.delete(f)
+    db.commit()
+    db.close()
+    with open('.limpo', 'w') as fw:
+        fw.write('OK')"""
 SISTEMA DE FICHA TÉCNICA PRO v2.2
 ✨ COM EDIÇÃO COMPLETA
 """
