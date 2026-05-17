@@ -1,14 +1,12 @@
 """
-SISTEMA DE FICHA TÉCNICA - VERSÃO PREMIUM COMPLETA
-Interface Moderna e Profissional
-✨ ATUALIZADO: Suporte a Fichas Aninhadas
+SISTEMA DE FICHA TÉCNICA PRO v2.2
+✨ COM EDIÇÃO COMPLETA
 """
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 from decimal import Decimal
-import sys
-import os
+import sys, os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -16,59 +14,39 @@ sys.path.insert(0, str(Path(__file__).parent))
 from database import SessionLocal, init_db
 from models import Cliente, Insumo, CustoOperacional, FichaTecnica, ItemFichaTecnica
 from exportacao_premium import gerar_excel_ficha, gerar_pdf_ficha
-from gerenciador_logos import salvar_logo_cliente, carregar_logo_cliente, deletar_logo_cliente
+from gerenciador_logos import salvar_logo_cliente, carregar_logo_cliente
 
-# Importar módulos de fichas aninhadas
 try:
-    from calculos_custos import (
-        validar_dependencia_circular,
-        calcular_custo_ficha_recursivo,
-        recalcular_todas_fichas,
-        obter_hierarquia_ingredientes
-    )
+    from calculos_custos import recalcular_todas_fichas, obter_hierarquia_ingredientes
     FICHAS_ANINHADAS_DISPONIVEL = True
 except ImportError:
     FICHAS_ANINHADAS_DISPONIVEL = False
 
 st.set_page_config(page_title="Ficha Técnica PRO", page_icon="📋", layout="wide")
 
-# CSS PREMIUM
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
-    * {font-family: 'Poppins', sans-serif;}
-    .main {background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);}
-    [data-testid="stSidebar"] {background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);}
-    [data-testid="stSidebar"] * {color: white !important;}
-    .main-title {font-size: 2.8rem; font-weight: 700; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; margin-bottom: 0.5rem;}
-    .subtitle {font-size: 1.2rem; color: #64748b; text-align: center; margin-bottom: 2rem;}
-    .card {background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        border: 1px solid #e2e8f0; transition: all 0.3s;}
-    .card:hover {transform: translateY(-5px); box-shadow: 0 15px 40px rgba(0,0,0,0.15);}
-    .stButton>button {border-radius: 12px; font-weight: 600; padding: 0.7rem 2rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;
-        border: none; box-shadow: 0 4px 15px rgba(102,126,234,0.4); transition: all 0.3s;}
-    .stButton>button:hover {transform: translateY(-2px); box-shadow: 0 6px 20px rgba(102,126,234,0.6);}
-    .stTabs [data-baseweb="tab-list"] {gap: 1rem; background: white; padding: 1rem; border-radius: 15px;}
-    .stTabs [aria-selected="true"] {background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white !important;}
-    [data-testid="stMetric"] {background: rgba(255,255,255,0.15); padding: 1rem; border-radius: 10px;}
-</style>
-""", unsafe_allow_html=True)
+st.markdown("""<style>
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+* {font-family: 'Poppins', sans-serif;}
+.main {background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);}
+[data-testid="stSidebar"] {background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);}
+[data-testid="stSidebar"] * {color: white !important;}
+.main-title {font-size: 2.8rem; font-weight: 700; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; margin-bottom: 0.5rem;}
+.stButton>button {border-radius: 12px; font-weight: 600; padding: 0.7rem 2rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;
+    border: none; box-shadow: 0 4px 15px rgba(102,126,234,0.4);}
+</style>""", unsafe_allow_html=True)
 
 init_db()
 
-# Migração automática (executa só uma vez)
 if FICHAS_ANINHADAS_DISPONIVEL and not os.path.exists('.migrado'):
     try:
         from migrar_fichas_aninhadas import migrar_banco
-        with st.spinner("🔄 Atualizando banco de dados..."):
+        with st.spinner("🔄 Atualizando..."):
             if migrar_banco():
                 with open('.migrado', 'w') as f:
                     f.write('OK')
-                st.success("✅ Sistema atualizado!")
-    except Exception as e:
-        st.warning(f"⚠️ Migração pendente: {e}")
+    except: pass
 
 if 'db' not in st.session_state:
     st.session_state.db = SessionLocal()
@@ -77,7 +55,7 @@ db = st.session_state.db
 # SIDEBAR
 st.sidebar.markdown("# 📋 Ficha Técnica PRO")
 if FICHAS_ANINHADAS_DISPONIVEL:
-    st.sidebar.markdown("✨ *Fichas Aninhadas*")
+    st.sidebar.markdown("✨ *Fichas Aninhadas* | **v2.2 Editável**")
 st.sidebar.markdown("---")
 menu = st.sidebar.radio("", ["🏠 Início", "👥 Clientes", "📦 Insumos", "💰 Custos", "📝 Fichas", "💵 Precificação"])
 st.sidebar.markdown("---")
@@ -88,21 +66,11 @@ st.sidebar.metric("📝 Fichas", db.query(FichaTecnica).filter(FichaTecnica.ativ
 # INÍCIO
 if menu == "🏠 Início":
     st.markdown('<p class="main-title">📋 Sistema de Ficha Técnica</p>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle">Gestão Profissional de Custos</p>', unsafe_allow_html=True)
-    
     if FICHAS_ANINHADAS_DISPONIVEL:
-        st.info("✨ **NOVO:** Suporte a fichas técnicas aninhadas! Use preparações intermediárias como ingredientes.")
-    
+        st.info("✨ **v2.2:** Agora com edição completa de clientes, insumos, custos e fichas!")
     col1, col2, col3 = st.columns(3)
-    for col, icon, title, desc in [
-        (col1, "👥", "Clientes", "Gerencie clientes com logos"),
-        (col2, "📦", "Insumos", "Controle preços e fornecedores"),
-        (col3, "📝", "Fichas", "Crie receitas profissionais")
-    ]:
-        col.markdown(f"""<div class="card" style="text-align:center;">
-            <div style="font-size:3.5rem;">{icon}</div>
-            <h2 style="color:#667eea;margin:1rem 0;">{title}</h2>
-            <p style="color:#64748b;">{desc}</p></div>""", unsafe_allow_html=True)
+    for col, icon, title in [(col1, "👥", "Clientes"), (col2, "📦", "Insumos"), (col3, "📝", "Fichas")]:
+        col.markdown(f'<div style="text-align:center;font-size:3.5rem;">{icon}</div><h3 style="text-align:center;color:#667eea;">{title}</h3>', unsafe_allow_html=True)
 
 # CLIENTES
 elif menu == "👥 Clientes":
@@ -112,30 +80,39 @@ elif menu == "👥 Clientes":
     with tab1:
         clientes = db.query(Cliente).filter(Cliente.ativo == 1).all()
         if clientes:
-            st.subheader(f"📊 {len(clientes)} clientes cadastrados")
-            df = pd.DataFrame([{'ID': c.id, 'Nome': c.nome, 'Telefone': c.telefone or '-', 'Email': c.email or '-'} for c in clientes])
-            st.dataframe(df, use_container_width=True, hide_index=True)
-            
-            with st.expander("🎨 Gerenciar Logos"):
-                for c in clientes:
-                    col1, col2 = st.columns([1, 2])
+            for c in clientes:
+                with st.expander(f"👤 {c.nome}"):
+                    col1, col2, col3 = st.columns([2,1,1])
                     with col1:
-                        st.markdown(f"**{c.nome}**")
-                        if c.logo_path:
-                            try:
-                                st.image(carregar_logo_cliente(c.logo_path), width=120)
-                            except:
-                                st.caption("❌ Erro")
-                        else:
-                            st.caption("📷 Sem logo")
+                        st.write(f"**Tel:** {c.telefone or '-'} | **Email:** {c.email or '-'}")
                     with col2:
-                        logo = st.file_uploader("Upload:", type=['png','jpg'], key=f"l{c.id}")
-                        if logo:
-                            path = salvar_logo_cliente(c.id, logo)
-                            c.logo_path = path
-                            db.commit()
-                            st.success("✅")
+                        if st.button("✏️ Editar", key=f"ec{c.id}"):
+                            st.session_state[f'ed_c_{c.id}'] = True
                             st.rerun()
+                    with col3:
+                        fc = db.query(FichaTecnica).filter(FichaTecnica.cliente_id==c.id, FichaTecnica.ativo==1).count()
+                        if fc > 0:
+                            st.warning(f"⚠️ {fc} fichas")
+                        elif st.button("🗑️ Del", key=f"dc{c.id}"):
+                            c.ativo = 0
+                            db.commit()
+                            st.rerun()
+                    
+                    if st.session_state.get(f'ed_c_{c.id}'):
+                        with st.form(f"fc{c.id}"):
+                            nn = st.text_input("Nome:", value=c.nome)
+                            nt = st.text_input("Tel:", value=c.telefone or "")
+                            ne = st.text_input("Email:", value=c.email or "")
+                            col1, col2 = st.columns(2)
+                            if col1.form_submit_button("💾 Salvar"):
+                                c.nome, c.telefone, c.email = nn, nt or None, ne or None
+                                db.commit()
+                                del st.session_state[f'ed_c_{c.id}']
+                                st.success("✅ OK!")
+                                st.rerun()
+                            if col2.form_submit_button("❌ Cancelar"):
+                                del st.session_state[f'ed_c_{c.id}']
+                                st.rerun()
         else:
             st.info("📭 Nenhum cliente")
     
@@ -160,14 +137,47 @@ elif menu == "📦 Insumos":
     with tab1:
         insumos = db.query(Insumo).filter(Insumo.ativo == 1).all()
         if insumos:
-            st.subheader(f"📊 {len(insumos)} insumos cadastrados")
-            df = pd.DataFrame([{
-                'Nome': i.nome,
-                'Unidade': i.unidade_medida,
-                'Preço': f"R$ {float(i.preco_unitario):.2f}",
-                'Fornecedor': i.fornecedor or '-'
-            } for i in insumos])
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            for i in insumos:
+                with st.expander(f"📦 {i.nome} - R$ {float(i.preco_unitario):.2f}/{i.unidade_medida}"):
+                    col1, col2, col3 = st.columns([2,1,1])
+                    with col1:
+                        st.write(f"**Preço:** R$ {float(i.preco_unitario):.2f} | **Fornecedor:** {i.fornecedor or '-'}")
+                    with col2:
+                        if st.button("✏️ Editar", key=f"ei{i.id}"):
+                            st.session_state[f'ed_i_{i.id}'] = True
+                            st.rerun()
+                    with col3:
+                        em_uso = db.query(ItemFichaTecnica).filter(ItemFichaTecnica.insumo_id==i.id, ItemFichaTecnica.tipo_item=='insumo').count()
+                        if em_uso > 0:
+                            st.warning(f"⚠️ {em_uso} fichas")
+                            if st.button("🔒 Inativar", key=f"ii{i.id}"):
+                                i.ativo = 0
+                                db.commit()
+                                st.rerun()
+                        elif st.button("🗑️ Del", key=f"di{i.id}"):
+                            db.delete(i)
+                            db.commit()
+                            st.rerun()
+                    
+                    if st.session_state.get(f'ed_i_{i.id}'):
+                        with st.form(f"fi{i.id}"):
+                            nn = st.text_input("Nome:", value=i.nome)
+                            col1, col2 = st.columns(2)
+                            idx = ["kg","g","L","ml","unidade"].index(i.unidade_medida) if i.unidade_medida in ["kg","g","L","ml","unidade"] else 0
+                            nu = col1.selectbox("Un:", ["kg","g","L","ml","unidade"], index=idx)
+                            np = col2.number_input("Preço:", min_value=0.0, value=float(i.preco_unitario), format="%.2f")
+                            col1, col2 = st.columns(2)
+                            if col1.form_submit_button("💾 Salvar"):
+                                i.nome, i.unidade_medida, i.preco_unitario = nn, nu, Decimal(str(np))
+                                db.commit()
+                                if FICHAS_ANINHADAS_DISPONIVEL:
+                                    recalcular_todas_fichas(db)
+                                del st.session_state[f'ed_i_{i.id}']
+                                st.success("✅ Recalculado!")
+                                st.rerun()
+                            if col2.form_submit_button("❌ Cancelar"):
+                                del st.session_state[f'ed_i_{i.id}']
+                                st.rerun()
         else:
             st.info("📭 Nenhum insumo")
     
@@ -196,11 +206,38 @@ elif menu == "💰 Custos":
         tab1, tab2 = st.tabs(["📋 Lista", "➕ Novo"])
         
         with tab1:
-            custos = db.query(CustoOperacional).filter(CustoOperacional.cliente_id == cid, CustoOperacional.ativo == 1).all()
+            custos = db.query(CustoOperacional).filter(CustoOperacional.cliente_id==cid, CustoOperacional.ativo==1).all()
             if custos:
-                df = pd.DataFrame([{'Tipo': c.tipo.upper(), 'Descrição': c.descricao, 'Valor': f"R$ {float(c.valor_mensal):.2f}"} for c in custos])
-                st.dataframe(df, use_container_width=True, hide_index=True)
-                st.metric("💰 Total Mensal", f"R$ {sum(float(c.valor_mensal) for c in custos):,.2f}")
+                for cu in custos:
+                    with st.expander(f"{cu.tipo.upper()}: {cu.descricao} - R$ {float(cu.valor_mensal):.2f}"):
+                        col1, col2, col3 = st.columns([2,1,1])
+                        with col2:
+                            if st.button("✏️ Editar", key=f"ecu{cu.id}"):
+                                st.session_state[f'ed_cu_{cu.id}'] = True
+                                st.rerun()
+                        with col3:
+                            if st.button("🗑️ Del", key=f"dcu{cu.id}"):
+                                cu.ativo = 0
+                                db.commit()
+                                st.rerun()
+                        
+                        if st.session_state.get(f'ed_cu_{cu.id}'):
+                            with st.form(f"fcu{cu.id}"):
+                                nt = st.radio("Tipo:", ["Fixo", "Variável"], index=0 if cu.tipo=='fixo' else 1)
+                                nd = st.text_input("Desc:", value=cu.descricao)
+                                nv = st.number_input("Valor:", min_value=0.0, value=float(cu.valor_mensal), format="%.2f")
+                                col1, col2 = st.columns(2)
+                                if col1.form_submit_button("💾 Salvar"):
+                                    cu.tipo = 'fixo' if nt=="Fixo" else 'variavel'
+                                    cu.descricao, cu.valor_mensal = nd, Decimal(str(nv))
+                                    db.commit()
+                                    del st.session_state[f'ed_cu_{cu.id}']
+                                    st.rerun()
+                                if col2.form_submit_button("❌ Cancelar"):
+                                    del st.session_state[f'ed_cu_{cu.id}']
+                                    st.rerun()
+                
+                st.metric("💰 Total", f"R$ {sum(float(c.valor_mensal) for c in custos):,.2f}")
             else:
                 st.info("📭 Nenhum custo")
         
@@ -216,7 +253,7 @@ elif menu == "💰 Custos":
                         st.success("✅ Salvo!")
                         st.rerun()
 
-# FICHAS (ATUALIZADO)
+# FICHAS
 elif menu == "📝 Fichas":
     st.markdown('<p class="main-title">📝 Fichas Técnicas</p>', unsafe_allow_html=True)
     
@@ -241,12 +278,10 @@ elif menu == "📝 Fichas":
                         cols = st.columns(4) if FICHAS_ANINHADAS_DISPONIVEL else st.columns(3)
                         cols[0].metric("Custo", f"R$ {float(f.custo_total):,.2f}")
                         cols[1].metric("Venda", f"R$ {float(f.preco_venda):,.2f}")
-                        if FICHAS_ANINHADAS_DISPONIVEL:
-                            if f.rendimento_gramas:
-                                cols[2].metric("Rendimento", f"{float(f.rendimento_gramas):.0f}g")
+                        if FICHAS_ANINHADAS_DISPONIVEL and f.rendimento_gramas:
+                            cols[2].metric("Rendimento", f"{float(f.rendimento_gramas):.0f}g")
                         
                         st.markdown("**Ingredientes:**")
-                        
                         if FICHAS_ANINHADAS_DISPONIVEL:
                             try:
                                 hierarquia = obter_hierarquia_ingredientes(db, f.id)
@@ -254,7 +289,6 @@ elif menu == "📝 Fichas":
                                     nivel = item['nivel']
                                     indent = "&nbsp;&nbsp;&nbsp;&nbsp;" * nivel
                                     prefixo = "└─ " if nivel > 0 else "• "
-                                    
                                     if item['eh_aninhado']:
                                         st.markdown(f"{indent}{prefixo}**{item['nome']}** ({item['quantidade']:.1f}g) R$ {item['custo']:.2f}", unsafe_allow_html=True)
                                     else:
@@ -269,7 +303,7 @@ elif menu == "📝 Fichas":
                                     st.write(f"• {i.insumo.nome}: {float(i.quantidade)}g")
                         
                         st.markdown("---")
-                        col1, col2 = st.columns(2)
+                        col1, col2, col3 = st.columns(3)
                         if col1.button("📊 Excel", key=f"xe{f.id}"):
                             excel = gerar_excel_ficha(f)
                             st.download_button("💾 Baixar", excel, f"ficha_{f.codigo}.xlsx", 
@@ -277,6 +311,21 @@ elif menu == "📝 Fichas":
                         if col2.button("📄 PDF", key=f"xp{f.id}"):
                             pdf = gerar_pdf_ficha(f)
                             st.download_button("💾 Baixar", pdf, f"ficha_{f.codigo}.pdf", "application/pdf", key=f"dp{f.id}")
+                        
+                        with col3:
+                            if FICHAS_ANINHADAS_DISPONIVEL:
+                                usada = db.query(ItemFichaTecnica).filter(ItemFichaTecnica.ficha_ingrediente_id==f.id, ItemFichaTecnica.tipo_item=='ficha').count()
+                                if usada > 0:
+                                    st.warning(f"⚠️ Em {usada}")
+                                elif st.button("🗑️ Del", key=f"df{f.id}"):
+                                    f.ativo = 0
+                                    db.commit()
+                                    st.rerun()
+                            else:
+                                if st.button("🗑️ Del", key=f"df{f.id}"):
+                                    f.ativo = 0
+                                    db.commit()
+                                    st.rerun()
             else:
                 st.info("📭 Nenhuma ficha")
         
@@ -321,7 +370,7 @@ elif menu == "📝 Fichas":
                         })
                         st.rerun()
             
-            else:  # Ficha
+            else:
                 if FICHAS_ANINHADAS_DISPONIVEL:
                     fichas_inter = db.query(FichaTecnica).filter(FichaTecnica.ativo == 1, FichaTecnica.eh_intermediaria == 1).all()
                     if fichas_inter:
@@ -415,5 +464,5 @@ elif menu == "💵 Precificação":
                 st.rerun()
 
 st.markdown("---")
-versao = "v2.1 ✨" if FICHAS_ANINHADAS_DISPONIVEL else "v2.0"
+versao = "v2.2 ✨ Editável" if FICHAS_ANINHADAS_DISPONIVEL else "v2.2"
 st.markdown(f"<div style='text-align:center;color:#888;'><p>Ficha Técnica PRO {versao}</p></div>", unsafe_allow_html=True)
