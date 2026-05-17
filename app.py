@@ -39,6 +39,15 @@ st.markdown("""<style>
 
 init_db()
 
+# Migracao automatica - adicionar campo quebra
+if not os.path.exists('.migrado_quebra'):
+    try:
+        from migrar_quebra import migrar_adicionar_quebra
+        if migrar_adicionar_quebra():
+            with open('.migrado_quebra', 'w') as f:
+                f.write('OK')
+    except: pass
+
 if FICHAS_ANINHADAS_DISPONIVEL and not os.path.exists('.migrado'):
     try:
         from migrar_fichas_aninhadas import migrar_banco
@@ -52,7 +61,7 @@ if 'db' not in st.session_state:
     st.session_state.db = SessionLocal()
 db = st.session_state.db
 
-st.sidebar.markdown("# Ficha Tecnica PRO v2.4")
+st.sidebar.markdown("# Ficha Tecnica PRO v2.5")
 st.sidebar.markdown("---")
 menu = st.sidebar.radio("", ["Inicio", "Clientes", "Insumos", "Custos", "Fichas", "Precificacao"])
 st.sidebar.markdown("---")
@@ -260,9 +269,20 @@ elif menu == "Fichas":
                         st.rerun()
                 for f in fichas:
                     with st.expander(f"{f.codigo} - {f.nome}"):
-                        cols = st.columns(3)
+                        cols = st.columns(4) if FICHAS_ANINHADAS_DISPONIVEL else st.columns(3)
                         cols[0].metric("Custo", f"R$ {float(f.custo_total):.2f}")
                         cols[1].metric("Venda", f"R$ {float(f.preco_venda):.2f}")
+                        if FICHAS_ANINHADAS_DISPONIVEL:
+                            # Calcular rendimento bruto (soma dos ingredientes)
+                            rend_bruto = sum(float(i.quantidade) for i in f.itens)
+                            quebra = float(f.percentual_quebra or 0)
+                            rend_liquido = float(f.rendimento_gramas or 0)
+                            if quebra > 0:
+                                cols[2].metric("Rendimento", f"{rend_liquido:.0f}g")
+                                cols[3].metric("Quebra", f"{quebra:.1f}%")
+                                st.caption(f"Bruto: {rend_bruto:.0f}g | Liquido: {rend_liquido:.0f}g (-{quebra}%)")
+                            else:
+                                cols[2].metric("Rendimento", f"{rend_liquido:.0f}g")
                         st.markdown("**Ingredientes:**")
                         if FICHAS_ANINHADAS_DISPONIVEL:
                             try:
@@ -323,9 +343,17 @@ elif menu == "Fichas":
                                 novo_nome = col2.text_input("Nome:", value=f.nome)
                                 
                                 if FICHAS_ANINHADAS_DISPONIVEL:
-                                    col1, col2 = st.columns(2)
-                                    novo_rend = col1.number_input("Rendimento (g):", min_value=0.0, value=float(f.rendimento_gramas or 0), step=10.0)
-                                    novo_inter = col2.checkbox("Pode ser ingrediente", value=bool(f.eh_intermediaria))
+                                    st.markdown("**Rendimento e Quebra:**")
+                                    col1, col2, col3 = st.columns(3)
+                                    # Calcular rendimento bruto dos ingredientes atuais + novos
+                                    rend_bruto_atual = sum(float(item.quantidade) for item in f.itens if item.id in [i[0] for i in itens_para_manter])
+                                    rend_bruto_novos = sum(ing['qtd'] for ing in st.session_state.get(f'novos_ing_{f.id}', []))
+                                    rend_bruto_total = rend_bruto_atual + rend_bruto_novos
+                                    col1.metric("BRUTO (auto)", f"{rend_bruto_total:.1f}g")
+                                    novo_quebra = col2.number_input("% Quebra:", min_value=0.0, max_value=100.0, value=float(f.percentual_quebra or 0), step=0.5)
+                                    rend_liquido_calc = rend_bruto_total * (1 - novo_quebra/100) if novo_quebra > 0 else rend_bruto_total
+                                    col3.metric("LIQUIDO", f"{rend_liquido_calc:.1f}g")
+                                    novo_inter = st.checkbox("Pode ser ingrediente", value=bool(f.eh_intermediaria))
                                 
                                 st.markdown("**Ingredientes Atuais:**")
                                 itens_para_manter = []
@@ -355,7 +383,8 @@ elif menu == "Fichas":
                                     f.codigo = novo_cod
                                     f.nome = novo_nome
                                     if FICHAS_ANINHADAS_DISPONIVEL:
-                                        f.rendimento_gramas = Decimal(str(novo_rend))
+                                        f.rendimento_gramas = Decimal(str(rend_liquido_calc))
+                                        f.percentual_quebra = Decimal(str(novo_quebra))
                                         f.eh_intermediaria = 1 if novo_inter else 0
                                     
                                     # Deletar itens nao mantidos
@@ -476,9 +505,18 @@ elif menu == "Fichas":
             cod = col1.text_input("Codigo:")
             nom = col2.text_input("Nome:")
             if FICHAS_ANINHADAS_DISPONIVEL:
+                st.markdown("**Rendimento e Quebra:**")
                 col1, col2 = st.columns(2)
-                rend = col1.number_input("Rendimento (g):", min_value=0.0, step=10.0)
-                inter = col2.checkbox("Pode ser ingrediente")
+                # Calcular rendimento bruto automaticamente
+                rend_bruto = sum(ing['qtd'] for ing in st.session_state.get('ing', []))
+                col1.metric("Rendimento BRUTO (auto):", f"{rend_bruto:.1f}g")
+                quebra_pct = col2.number_input("% Quebra (coccao):", min_value=0.0, max_value=100.0, value=0.0, step=0.5, help="Perda por coccao/preparo")
+                if rend_bruto > 0 and quebra_pct > 0:
+                    rend_liquido = rend_bruto * (1 - quebra_pct/100)
+                    st.info(f"Rendimento LIQUIDO: {rend_liquido:.1f}g (bruto {rend_bruto:.1f}g - {quebra_pct}% quebra)")
+                else:
+                    rend_liquido = rend_bruto
+                inter = st.checkbox("Pode ser ingrediente")
             st.subheader("Ingredientes")
             tipo = st.radio("Tipo:", ["Insumo", "Ficha"], horizontal=True) if FICHAS_ANINHADAS_DISPONIVEL else "Insumo"
             if tipo == "Insumo":
@@ -517,7 +555,11 @@ elif menu == "Fichas":
                     if cod and nom:
                         fd = {'cliente_id':cid,'codigo':cod,'nome':nom,'custo_total':Decimal(str(total))}
                         if FICHAS_ANINHADAS_DISPONIVEL:
-                            fd.update({'rendimento_gramas':Decimal(str(rend)),'eh_intermediaria':1 if inter else 0})
+                            fd.update({
+                                'rendimento_gramas':Decimal(str(rend_liquido)),
+                                'percentual_quebra':Decimal(str(quebra_pct)),
+                                'eh_intermediaria':1 if inter else 0
+                            })
                         fic = FichaTecnica(**fd)
                         db.add(fic)
                         db.flush()
@@ -557,4 +599,4 @@ elif menu == "Precificacao":
                 st.rerun()
 
 st.markdown("---")
-st.markdown("<div style='text-align:center;color:#888;'>Ficha Tecnica PRO v2.4 - Edicao Completa</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align:center;color:#888;'>Ficha Tecnica PRO v2.5 - Rendimento Auto + Quebra</div>", unsafe_allow_html=True)

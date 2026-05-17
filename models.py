@@ -1,5 +1,5 @@
 """
-Sistema de Ficha Técnica - Models SQLAlchemy
+Sistema de Ficha Tecnica - Models SQLAlchemy
 Estrutura com Compatibilidade Retroativa
 """
 from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, DateTime, Text
@@ -45,7 +45,7 @@ class Insumo(Base):
 
 
 class CustoOperacional(Base):
-    """Custos Fixos e Variáveis por Cliente"""
+    """Custos Fixos e Variaveis por Cliente"""
     __tablename__ = 'custos_operacionais'
     
     id = Column(Integer, primary_key=True)
@@ -59,7 +59,7 @@ class CustoOperacional(Base):
 
 
 class FichaTecnica(Base):
-    """Fichas Técnicas (Receitas)"""
+    """Fichas Tecnicas (Receitas)"""
     __tablename__ = 'fichas_tecnicas'
     
     id = Column(Integer, primary_key=True)
@@ -69,6 +69,7 @@ class FichaTecnica(Base):
     categoria = Column(String(100))
     rendimento = Column(String(100))
     rendimento_gramas = Column(Numeric(10, 2), default=0)
+    percentual_quebra = Column(Numeric(5, 2), default=0)
     tempo_preparo = Column(Integer)
     observacoes = Column(Text)
     
@@ -88,19 +89,16 @@ class FichaTecnica(Base):
 
 
 class ItemFichaTecnica(Base):
-    """Ingredientes de uma Ficha Técnica"""
+    """Ingredientes de uma Ficha Tecnica"""
     __tablename__ = 'itens_ficha_tecnica'
     
     id = Column(Integer, primary_key=True)
     ficha_tecnica_id = Column(Integer, ForeignKey('fichas_tecnicas.id'), nullable=False)
     
-    # Tipo do item ('insumo' ou 'ficha')
     tipo_item = Column(String(20), default='insumo', nullable=False)
     
-    # Insumo simples
     insumo_id = Column(Integer, ForeignKey('insumos.id'), nullable=True)
     
-    # Ficha técnica como ingrediente
     ficha_ingrediente_id = Column(Integer, ForeignKey('fichas_tecnicas.id'), nullable=True)
     
     quantidade = Column(Numeric(10, 3), nullable=False)
@@ -108,8 +106,6 @@ class ItemFichaTecnica(Base):
     custo_unitario_historico = Column(Numeric(10, 6), default=0)
     ordem = Column(Integer, default=0)
     
-    # Relacionamentos com foreign_keys explícitos para evitar ambiguidade
     ficha_tecnica = relationship("FichaTecnica", foreign_keys=[ficha_tecnica_id], back_populates="itens")
     insumo = relationship("Insumo", foreign_keys=[insumo_id], back_populates="itens_ficha")
-    # Relacionamento simples sem back_populates para evitar conflito
     ficha_ingrediente = relationship("FichaTecnica", foreign_keys=[ficha_ingrediente_id], lazy='joined')
