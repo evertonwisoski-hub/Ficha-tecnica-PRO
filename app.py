@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from database import SessionLocal, init_db
 from models import Cliente, Insumo, CustoOperacional, FichaTecnica, ItemFichaTecnica
-from exportacao_premium import gerar_exce"""
+from exportacao_premium import gerar_excel_ficha, gerar_pdf_ficha
 SISTEMA DE FICHA TÉCNICA PRO v2.2
 ✨ COM EDIÇÃO COMPLETA
 """
